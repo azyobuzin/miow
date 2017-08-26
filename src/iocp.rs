@@ -139,6 +139,8 @@ impl CompletionPort {
     {
         debug_assert_eq!(mem::size_of::<CompletionStatus>(),
                          mem::size_of::<OVERLAPPED_ENTRY>());
+        let start_time = ::std::time::Instant::now();
+        /*
         let mut removed = 0;
         let timeout = ::dur2ms(timeout);
         let len = cmp::min(list.len(), <ULONG>::max_value() as usize) as ULONG;
@@ -154,6 +156,23 @@ impl CompletionPort {
             Ok(_) => Ok(&mut list[..removed as usize]),
             Err(e) => Err(e),
         }
+        */
+        for i in 0..list.len() {
+            let timeout = match (i, timeout) {
+                (_, Some(x)) => Some(x.checked_sub(start_time.elapsed()).unwrap_or(Duration::default())),
+                (0, None) => None,
+                (_, None) => Some(Duration::default()) // Do not wait if it is not the first time
+            };
+            let ret = self.get(timeout);
+            match ret {
+                Ok(x) => list[i] = x,
+                Err(x) => match x.kind() {
+                    io::ErrorKind::TimedOut => return Ok(&mut list[..i]),
+                    _ => return Err(x),
+                }
+            }
+        }
+        Ok(list)
     }
 
     /// Posts a new completion status onto this I/O completion port.
